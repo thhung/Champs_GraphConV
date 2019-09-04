@@ -31,11 +31,16 @@ warnings.filterwarnings('ignore')
 
 
 def main():
-  train_val_test_df = pd.read_parquet('train_test.parquet', engine='fastparquet', 
+    ## train_test.parquet is the combination of train.csv and test.csv 
+    ## with some rduction on memory the original csv consumes a lot of 
+    ## memory and time to load so I saved them on parquet for faster loading.
+    train_val_test_df = pd.read_parquet('train_test.parquet', engine='fastparquet', 
                                 columns = ['atom_index_0', 'atom_index_1', 'molecule_name', 
                                            'scalar_coupling_constant','type','dist','inv_dist',
                                            'inv_dist_p_2','inv_dist_p_3', 'coulomb_0_1'])
-  pass
+    structures_df = pd.read_csv('structures.csv')
+    pass
+  
   
 if __name__=="__main__":
     main()
