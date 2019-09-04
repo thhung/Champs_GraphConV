@@ -30,7 +30,7 @@ from tqdm import tqdm
 
 from dataset import ChampsDataset
 from model import Net
-
+from lr import LocalCyclicLR
 
 warnings.filterwarnings('ignore')
 
@@ -127,6 +127,23 @@ def train_eval_epoch(model_, optimizer_,scheduler_, train_loader_, val_loader_, 
         gc.collect()
     return model_, train_losses, val_losses, lb_scores
 
+def cycle_batch(train_set_, model_, optimizer_,scheduler_, val_loader_, number_epoch, PRINT_EACH_=1000, scaler_=None):
+    """ idea of changing batch among the epoches. Not that effective in this dataset.
+    """
+    batch_scheduler = [4,8,16]
+    train_loader_ = None
+    train_losses = []
+    val_losses = []
+    lb_scores = []
+    for e in range(number_epoch):
+        if e < len(batch_scheduler):
+            train_loader_ = DataLoader(train_set_, batch_size=batch_scheduler[e], shuffle=True)
+        model_, train_loss, val_loss, lb_score = train_eval_epoch(model_, optimizer_,scheduler_, train_loader_, val_loader_, 1, PRINT_EACH_, scaler_)
+        train_losses.append(train_loss[0]) ## , , 
+        val_losses.append(val_loss[0])
+        lb_scores.append(lb_score[0])
+    return model_, train_losses, val_losses, lb_scores
+
 def main():
     ## train_test.parquet is the combination of train.csv and test.csv 
     ## with some rduction on memory the original csv consumes a lot of 
@@ -162,9 +179,22 @@ def main():
     val_loader = DataLoader(val_set, batch_size=32, shuffle=False)
     
     criterion = nn.CrossEntropyLoss().to(device)
-
-    pass
-  
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    ## ignore the scheduler in this experiment
+    scheduler = None
+    
+    model, train_losses, val_losses, lb_scores = cycle_batch(train_set, model, optimizer, scheduler, val_loader, 20)
+    #######
+    """
+    Example of output:
+        Loss item : 4.466595649719238
+        avg train loss at epoch 0 : 3.0191433942676382
+            cur_loss_avg: 3.1088061332702637
+        avg val loss at epoch 0 : 2.936697326722692
+        Epoch : 0 val lb loss = 1.440756916999817
+        ....
+    """
+    torch.save(model.state_dict(), './trained_model.pkl')
   
 if __name__=="__main__":
     main()
