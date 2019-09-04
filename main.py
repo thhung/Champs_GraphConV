@@ -27,11 +27,105 @@ from sklearn import preprocessing
 from sklearn.preprocessing import StandardScaler
 
 from tqdm import tqdm
+
 from dataset import ChampsDataset
+from model import Net
 
 
 warnings.filterwarnings('ignore')
 
+def eval_df(gb, scaler):
+    """
+    Eval the results on the validation set which is in form of dataframe. 
+    Args:
+        gb      : groupby dataframe which contains the results.
+        scaler  : the scikit-learn transformer that scaled the training data.
+    
+    Return:
+        log mean MAE score 
+    """
+    if scaler:
+        gb[['pred']] = scaler.inverse_transform(gb[['pred']])
+        gb[['true']] = scaler.inverse_transform(gb[['true']]) 
+    gb['abs_dif'] = (gb['pred']- gb['true']).abs()
+    ss = gb.groupby('type').abs_dif.mean()
+    lb_score = np.log(ss).mean()
+    return lb_score
+
+def train_eval_epoch(model_, optimizer_,scheduler_, train_loader_, val_loader_, number_epoch, PRINT_EACH_=1000, scaler_=None):
+""" A whole pipeline: train - val - repeat for this problem
+    Args:
+        the name of each args should tell about themself if reader is familiar with the concept of pytorch
+        
+    Returns: 
+        model_ : trained model
+        train_losses : loss for training
+        val_losses : loss for evaluation
+        lb_scores : score for leaderboard of CHAMPS competition, aka mean of log mae for each type. 
+"""
+    train_losses = []
+    val_losses = []
+    lb_scores = []
+    for ep in range(number_epoch):
+        model_.train()
+        loss_all = 0
+        i = 0
+        for data in train_loader_:
+            data = data.to(device)
+            optimizer_.zero_grad()
+            cls_, precs_ = model_(data)
+            loss = sum([0.8 * criterion(cls_, data.y_cls.view(-1).long()), 0.2 * F.mse_loss(precs_, data.y_precs)])
+            loss.backward()
+            loss_all += loss.item() * data.num_graphs
+            optimizer_.step()
+            if scheduler_:
+                scheduler_.step()
+            if i % PRINT_EACH_==0:
+                print(f" Loss item : {loss.item()}")
+            i+=1
+        train_l = loss_all / len(train_loader_.dataset)
+        print(f"avg train loss at epoch {ep} : {train_l}")
+        train_losses.append(train_l)
+
+        model_.eval()
+        error = []
+        lb_error = 0
+        nb_edges = 0
+        mega_type = []
+        mega_pred = []
+        mega_true = []
+        print_ = True
+        with torch.no_grad():
+            i = 0
+            for data in val_loader_:
+                data = data.to(device)
+                o_cls, o_precs = model_(data)
+                loss = sum([0.8 * F.cross_entropy(o_cls, data.y_cls.view(-1).long()), 0.2 * F.mse_loss(o_precs, data.y_precs)])
+                _, predicted = torch.max(o_cls, 1)
+                pred = predicted.float() + o_precs.view(predicted.size())
+                pred = np.reshape(pred.detach().cpu().numpy(), (-1, 1)) # torch.sum(out, dim=1)
+                tp = data.edge_atr.cpu().numpy()
+                gt = np.reshape((data.y_cls.float() + data.y_precs).cpu().view(-1).numpy(), (-1,1)) 
+                mega_type.append(tp)
+                mega_pred.append(pred)
+                mega_true.append(gt)
+                error.append(loss.item()*data.num_graphs)
+                if i % PRINT_EACH_ == 0 :
+                    print(f'            cur_loss_avg: {loss}')
+                i+=1
+        types = np.concatenate(mega_type, axis=0)
+        pred = np.concatenate(mega_pred, axis= 0)
+        trues = np.concatenate(mega_true, axis= 0)
+        dataset = pd.DataFrame({'type' : types[:,0], 'pred' : pred[:,0], 'true' : trues[:,0]})
+        val_l = np.sum([x/len(val_loader_.dataset) for x in error])
+        print(f"avg val loss at epoch {ep} : {val_l}")
+        val_losses.append(val_l)
+        l = eval_df(dataset,None) # 
+        lb_scores.append(l)
+        print(f"Epoch : {ep} val lb loss = {l}")
+        del dataset
+        gc.collect()
+    return model_, train_losses, val_losses, lb_scores
 
 def main():
     ## train_test.parquet is the combination of train.csv and test.csv 
@@ -61,7 +155,14 @@ def main():
     BATCH_SZ = 64
     PRINT_EACH = 1000
     
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = Net().to(device) # in_size = 1, out_size=OUT_SIZE, num_cls = 242
     
+    train_loader = DataLoader(train_set, batch_size=256, shuffle=True)
+    val_loader = DataLoader(val_set, batch_size=32, shuffle=False)
+    
+    criterion = nn.CrossEntropyLoss().to(device)
+
     pass
   
   
