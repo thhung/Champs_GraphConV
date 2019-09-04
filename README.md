@@ -9,4 +9,5 @@ Installation for dependencies:
 pip install networkx dscribe
 conda install -y -c rdkit rdkit
 ```
-After cleaning, code will be released.
+
+In this experiment, serveral configuration and different neural network is experimented. It seems that adding the attention mechanism into network that has a significant impact on the performance rather than pure simple graph conv.
