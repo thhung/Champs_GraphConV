@@ -10,4 +10,4 @@ pip install networkx dscribe
 conda install -y -c rdkit rdkit
 ```
 
-In this experiment, serveral configuration and different neural network is experimented. It seems that adding the attention mechanism into network that has a significant impact on the performance rather than pure simple graph conv.
+In this experiment, serveral configurations and different neural networks are experimented. It seems that adding the attention mechanism into network has a significant impact on the performance rather than pure simple graph conv.
